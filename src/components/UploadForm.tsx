@@ -1,20 +1,25 @@
 // @ts-nocheck
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { v4 as uuidv4 } from 'uuid';
 
 export default function UploadForm() {
   const router = useRouter();
-  const [photo, setPhoto] = useState<File | null>(null);
-  const [video, setVideo] = useState<File | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Read files directly from the DOM refs — avoids React 19 state-reset issues
+    const photo = photoInputRef.current?.files?.[0] ?? null;
+    const video = videoInputRef.current?.files?.[0] ?? null;
+
     if (!photo || !video) {
       setStatus('error');
       setMessage('Please upload both a Photo and a Video.');
@@ -50,7 +55,7 @@ export default function UploadForm() {
       const { data, error: dbErr } = await supabase.from('projects').insert({
         image_url: photoUrl,
         video_url: videoUrl,
-        tracking_url: null
+        tracking_url: ''
       }).select().single();
 
       if (dbErr) throw dbErr;
@@ -80,9 +85,9 @@ export default function UploadForm() {
             <div>
               <label className="block text-sm font-medium text-white/70 mb-1">Target Photo (Image)</label>
               <input 
+                ref={photoInputRef}
                 type="file" 
                 accept="image/*" 
-                onChange={(e) => setPhoto(e.target.files?.[0] || null)}
                 className="w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 transition"
               />
               <p className="text-xs text-white/40 mt-1">This is the photo you'll print. The video will play on top of it.</p>
@@ -91,9 +96,9 @@ export default function UploadForm() {
             <div>
               <label className="block text-sm font-medium text-white/70 mb-1">AR Video (Max 5MB)</label>
               <input 
+                ref={videoInputRef}
                 type="file" 
                 accept="video/*" 
-                onChange={(e) => setVideo(e.target.files?.[0] || null)}
                 className="w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-600 file:text-white hover:file:bg-violet-700 transition"
               />
               <p className="text-xs text-white/40 mt-1">This video will play when someone views your photo through the camera.</p>
