@@ -40,3 +40,9 @@ variables.env
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Tooling and sensitive info
+.vibecheck/
+New Text Document.txt
+test.mp4
+test.png
