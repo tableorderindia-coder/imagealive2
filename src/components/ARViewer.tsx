@@ -21,6 +21,10 @@ export default function ARViewer({ projectId }: { projectId: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraRef = useRef<HTMLVideoElement>(null);
   const targetRef = useRef<HTMLElement | null>(null);
+  const trackedVideoRef = useRef<HTMLVideoElement | null>(null);
+  const trackedSceneRef = useRef<HTMLElement | null>(null);
+  const trackedTargetVisibleRef = useRef(false);
+  const trackedPauseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -172,35 +176,111 @@ export default function ARViewer({ projectId }: { projectId: string }) {
     };
   }, [viewerMode]);
 
+  const attemptTrackedPlayback = useCallback(async () => {
+    const videoEl = trackedVideoRef.current;
+
+    if (!videoEl || !trackedTargetVisibleRef.current) {
+      return false;
+    }
+
+    videoEl.defaultMuted = true;
+    videoEl.muted = true;
+    videoEl.loop = true;
+    videoEl.playsInline = true;
+    videoEl.setAttribute('muted', '');
+    videoEl.setAttribute('playsinline', 'true');
+    videoEl.setAttribute('webkit-playsinline', 'true');
+
+    if (videoEl.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      return false;
+    }
+
+    try {
+      await videoEl.play();
+      setIsPlaying(true);
+      return true;
+    } catch (err) {
+      console.warn('Tracked autoplay blocked:', err);
+      return false;
+    }
+  }, []);
+
   useEffect(() => {
     if (viewerMode !== 'tracked' || !librariesLoaded || !targetRef.current) return;
 
     const target = targetRef.current;
+    const videoEl = trackedVideoRef.current;
+    const sceneEl = trackedSceneRef.current;
+
+    if (!videoEl) {
+      return;
+    }
 
     const handleTargetFound = () => {
-      const videoEl = document.querySelector('#ar-video') as HTMLVideoElement | null;
-      if (videoEl) {
-        videoEl.play().catch((err) => console.warn('Tracked autoplay blocked:', err));
+      trackedTargetVisibleRef.current = true;
+
+      if (trackedPauseTimeoutRef.current) {
+        clearTimeout(trackedPauseTimeoutRef.current);
+        trackedPauseTimeoutRef.current = null;
       }
-      setIsPlaying(true);
+
+      void attemptTrackedPlayback();
     };
 
     const handleTargetLost = () => {
-      const videoEl = document.querySelector('#ar-video') as HTMLVideoElement | null;
-      if (videoEl) {
-        videoEl.pause();
+      trackedTargetVisibleRef.current = false;
+
+      if (trackedPauseTimeoutRef.current) {
+        clearTimeout(trackedPauseTimeoutRef.current);
       }
-      setIsPlaying(false);
+
+      // MindAR can briefly lose the image on mobile while still effectively aligned.
+      trackedPauseTimeoutRef.current = setTimeout(() => {
+        videoEl.pause();
+        setIsPlaying(false);
+        trackedPauseTimeoutRef.current = null;
+      }, 700);
+    };
+
+    const handleVideoReady = () => {
+      void attemptTrackedPlayback();
+    };
+
+    const handleSceneReady = () => {
+      void attemptTrackedPlayback();
+    };
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        void attemptTrackedPlayback();
+      }
     };
 
     target.addEventListener('targetFound', handleTargetFound);
     target.addEventListener('targetLost', handleTargetLost);
+    videoEl.addEventListener('loadeddata', handleVideoReady);
+    videoEl.addEventListener('canplay', handleVideoReady);
+    sceneEl?.addEventListener('loaded', handleSceneReady);
+    sceneEl?.addEventListener('renderstart', handleSceneReady);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       target.removeEventListener('targetFound', handleTargetFound);
       target.removeEventListener('targetLost', handleTargetLost);
+      videoEl.removeEventListener('loadeddata', handleVideoReady);
+      videoEl.removeEventListener('canplay', handleVideoReady);
+      sceneEl?.removeEventListener('loaded', handleSceneReady);
+      sceneEl?.removeEventListener('renderstart', handleSceneReady);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+
+      if (trackedPauseTimeoutRef.current) {
+        clearTimeout(trackedPauseTimeoutRef.current);
+        trackedPauseTimeoutRef.current = null;
+      }
+
+      trackedTargetVisibleRef.current = false;
     };
-  }, [librariesLoaded, viewerMode]);
+  }, [attemptTrackedPlayback, librariesLoaded, viewerMode]);
 
   const handleManualPlay = useCallback(() => {
     if (!videoRef.current) return;
@@ -237,6 +317,7 @@ export default function ARViewer({ projectId }: { projectId: string }) {
     return (
       <div className="w-full h-screen overflow-hidden fixed inset-0 z-50 bg-black">
         <a-scene
+          ref={trackedSceneRef}
           mindar-image={`imageTargetSrc: ${projectData.tracking_url};`}
           color-space="sRGB"
           renderer="colorManagement: true, physicallyCorrectLights"
@@ -246,6 +327,8 @@ export default function ARViewer({ projectId }: { projectId: string }) {
           <a-assets>
             <video
               id="ar-video"
+              ref={trackedVideoRef}
+              autoPlay
               crossOrigin="anonymous"
               src={projectData.video_url}
               preload="auto"
@@ -287,7 +370,7 @@ export default function ARViewer({ projectId }: { projectId: string }) {
         <div
           className="absolute inset-0 z-0"
           onClick={() => {
-            const trackedVideo = document.getElementById('ar-video') as HTMLVideoElement | null;
+            const trackedVideo = trackedVideoRef.current;
             if (!trackedVideo) return;
             trackedVideo.muted = false;
             trackedVideo.play().catch(() => {});
