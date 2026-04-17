@@ -18,8 +18,20 @@ CREATE TABLE IF NOT EXISTS public.projects (
   image_url     TEXT        NOT NULL,       -- Public URL of the uploaded target photo (Supabase Storage → images bucket)
   video_url     TEXT        NOT NULL,       -- Public URL of the uploaded AR video   (Supabase Storage → videos bucket)
   tracking_url  TEXT        NOT NULL DEFAULT '',  -- Reserved for future marker/tracking image URL
+  overlay_x     DOUBLE PRECISION NOT NULL DEFAULT 0,
+  overlay_y     DOUBLE PRECISION NOT NULL DEFAULT 0,
+  overlay_scale DOUBLE PRECISION NOT NULL DEFAULT 1,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE public.projects
+  ADD COLUMN IF NOT EXISTS overlay_x DOUBLE PRECISION NOT NULL DEFAULT 0;
+
+ALTER TABLE public.projects
+  ADD COLUMN IF NOT EXISTS overlay_y DOUBLE PRECISION NOT NULL DEFAULT 0;
+
+ALTER TABLE public.projects
+  ADD COLUMN IF NOT EXISTS overlay_scale DOUBLE PRECISION NOT NULL DEFAULT 1;
 
 -- Index on created_at for chronological listings
 CREATE INDEX IF NOT EXISTS idx_projects_created_at ON public.projects (created_at DESC);

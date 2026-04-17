@@ -30,12 +30,6 @@ export default function UploadForm() {
       return;
     }
 
-    if (video.size > 5 * 1024 * 1024) {
-      setStatus('error');
-      setMessage('Video must be under 5MB.');
-      return;
-    }
-
     try {
       setStatus('uploading');
       setMessage('Uploading photo...');
@@ -68,7 +62,10 @@ export default function UploadForm() {
       const projectRecord: ProjectInsert = {
         image_url: photoUrl,
         video_url: videoUrl,
-        tracking_url: trackingUrl
+        tracking_url: trackingUrl,
+        overlay_x: 0,
+        overlay_y: 0,
+        overlay_scale: 1,
       };
       const { data, error: dbErr } = await supabase.from('projects').insert(projectRecord).select().single();
 
@@ -108,14 +105,14 @@ export default function UploadForm() {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-white/70 mb-1">AR Video (Max 5MB)</label>
+              <label className="block text-sm font-medium text-white/70 mb-1">AR Video</label>
               <input 
                 ref={videoInputRef}
                 type="file" 
                 accept="video/*" 
                 className="w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-600 file:text-white hover:file:bg-violet-700 transition"
               />
-              <p className="text-xs text-white/40 mt-1">This video will play when someone views your photo through the camera.</p>
+              <p className="text-xs text-white/40 mt-1">This video will play when someone views your photo through the camera. Large files are allowed, though smaller videos still load faster on phones.</p>
             </div>
           </div>
         </div>

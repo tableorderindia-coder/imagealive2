@@ -15,6 +15,9 @@ export interface Database {
           image_url: string
           video_url: string
           tracking_url: string
+          overlay_x: number
+          overlay_y: number
+          overlay_scale: number
           created_at: string
         }
         Insert: {
@@ -22,6 +25,9 @@ export interface Database {
           image_url: string
           video_url: string
           tracking_url: string
+          overlay_x?: number
+          overlay_y?: number
+          overlay_scale?: number
           created_at?: string
         }
         Update: {
@@ -29,6 +35,9 @@ export interface Database {
           image_url?: string
           video_url?: string
           tracking_url?: string
+          overlay_x?: number
+          overlay_y?: number
+          overlay_scale?: number
           created_at?: string
         }
         Relationships: []

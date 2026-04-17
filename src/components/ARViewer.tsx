@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { getViewerMode } from '@/lib/ar-viewer';
+import { calculateDefaultOverlayPlacement, getOverlayRenderMetrics } from '@/lib/overlay-placement';
 import type { Database } from '@/types/database';
 
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
@@ -10,6 +11,8 @@ type ProjectRow = Database['public']['Tables']['projects']['Row'];
 export default function ARViewer({ projectId }: { projectId: string }) {
   const [projectData, setProjectData] = useState<ProjectRow | null>(null);
   const [imageAspectRatio, setImageAspectRatio] = useState(1);
+  const [photoDimensions, setPhotoDimensions] = useState<{ width: number; height: number } | null>(null);
+  const [videoDimensions, setVideoDimensions] = useState<{ width: number; height: number } | null>(null);
   const [librariesLoaded, setLibrariesLoaded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [overlayOpacity, setOverlayOpacity] = useState(0.92);
@@ -34,7 +37,22 @@ export default function ARViewer({ projectId }: { projectId: string }) {
       img.src = project.image_url;
       img.onload = () => {
         if (!isMounted) return;
+        setPhotoDimensions({
+          width: img.width,
+          height: img.height,
+        });
         setImageAspectRatio(img.height / img.width || 1);
+      };
+
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.src = project.video_url;
+      video.onloadedmetadata = () => {
+        if (!isMounted) return;
+        setVideoDimensions({
+          width: video.videoWidth,
+          height: video.videoHeight,
+        });
       };
     }
 
@@ -46,6 +64,40 @@ export default function ARViewer({ projectId }: { projectId: string }) {
   }, [projectId]);
 
   const viewerMode = useMemo(() => getViewerMode(projectData), [projectData]);
+  const activePlacement = useMemo(() => {
+    if (!projectData || !photoDimensions || !videoDimensions) return null;
+
+    if (
+      typeof projectData.overlay_x === 'number' &&
+      typeof projectData.overlay_y === 'number' &&
+      typeof projectData.overlay_scale === 'number'
+    ) {
+      return {
+        x: projectData.overlay_x,
+        y: projectData.overlay_y,
+        scale: projectData.overlay_scale,
+      };
+    }
+
+    return calculateDefaultOverlayPlacement({
+      photoWidth: photoDimensions.width,
+      photoHeight: photoDimensions.height,
+      videoWidth: videoDimensions.width,
+      videoHeight: videoDimensions.height,
+    });
+  }, [photoDimensions, projectData, videoDimensions]);
+
+  const overlayMetrics = useMemo(() => {
+    if (!photoDimensions || !videoDimensions || !activePlacement) return null;
+
+    return getOverlayRenderMetrics({
+      photoWidth: photoDimensions.width,
+      photoHeight: photoDimensions.height,
+      videoWidth: videoDimensions.width,
+      videoHeight: videoDimensions.height,
+      placement: activePlacement,
+    });
+  }, [activePlacement, photoDimensions, videoDimensions]);
 
   useEffect(() => {
     if (viewerMode !== 'manual') return;
@@ -212,13 +264,15 @@ export default function ARViewer({ projectId }: { projectId: string }) {
               width="1"
               height="1"
             />
-            <a-plane
-              src="#ar-video"
-              material="shader: flat; side: double"
-              position="0 0 0.001"
-              width="1"
-              height="1"
-            />
+            {overlayMetrics && (
+              <a-plane
+                src="#ar-video"
+                material="shader: flat; side: double"
+                position={`${overlayMetrics.x} ${-overlayMetrics.y} 0.001`}
+                width={overlayMetrics.width}
+                height={overlayMetrics.height}
+              />
+            )}
           </a-entity>
         </a-scene>
 
@@ -283,20 +337,27 @@ export default function ARViewer({ projectId }: { projectId: string }) {
             }}
           />
 
-          <video
-            ref={videoRef}
-            src={projectData.video_url}
-            crossOrigin="anonymous"
-            loop
-            playsInline
-            muted
-            preload="auto"
-            className="absolute inset-0 w-full h-full object-cover rounded-[28px] transition-opacity duration-300"
-            style={{
-              opacity: isPlaying ? overlayOpacity : 0,
-              boxShadow: '0 0 60px rgba(76, 172, 255, 0.16)',
-            }}
-          />
+          {overlayMetrics && (
+            <video
+              ref={videoRef}
+              src={projectData.video_url}
+              crossOrigin="anonymous"
+              loop
+              playsInline
+              muted
+              preload="auto"
+              className="absolute object-cover rounded-[28px] transition-opacity duration-300"
+              style={{
+                width: `${overlayMetrics.width * 100}%`,
+                height: `${overlayMetrics.height * 100}%`,
+                left: `${50 + overlayMetrics.x * 100}%`,
+                top: `${50 + overlayMetrics.y * 100}%`,
+                transform: 'translate(-50%, -50%)',
+                opacity: isPlaying ? overlayOpacity : 0,
+                boxShadow: '0 0 60px rgba(76, 172, 255, 0.16)',
+              }}
+            />
+          )}
 
           <div
             className="absolute inset-0 rounded-[28px]"
