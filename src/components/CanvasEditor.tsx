@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
@@ -7,10 +6,12 @@ import QRCode from 'qrcode';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { supabase } from '@/lib/supabase';
+import type { Database } from '@/types/database';
+
+type ProjectRow = Database['public']['Tables']['projects']['Row'];
 
 export default function CanvasEditor({ projectId }: { projectId: string }) {
-  const [projectData, setProjectData] = useState<any>(null);
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [projectData, setProjectData] = useState<ProjectRow | null>(null);
   const [photoImg, setPhotoImg] = useState<HTMLImageElement | null>(null);
   const [qrImg, setQrImg] = useState<HTMLImageElement | null>(null);
   const [hideQR, setHideQR] = useState(false);
@@ -24,19 +25,19 @@ export default function CanvasEditor({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     async function loadProject() {
-      const { data, error } = await supabase.from('projects').select('*').eq('id', projectId).single();
-      if (data) {
-        setProjectData(data);
+      const { data } = await supabase.from('projects').select('*').eq('id', projectId).single();
+      const project = data as ProjectRow | null;
+      if (project) {
+        setProjectData(project);
         
         // Generate QR code
         const viewUrl = `${window.location.origin}/view/${projectId}`;
         const qr = await QRCode.toDataURL(viewUrl, { margin: 1, width: 150 });
-        setQrDataUrl(qr);
 
         // Load photo
         const pImg = new window.Image();
         pImg.crossOrigin = 'Anonymous';
-        pImg.src = data.image_url;
+        pImg.src = project.image_url;
         pImg.onload = () => setPhotoImg(pImg);
 
         // Load QR
@@ -73,7 +74,7 @@ export default function CanvasEditor({ projectId }: { projectId: string }) {
     <div className="flex flex-col items-center gap-6 w-full max-w-4xl mx-auto p-4">
       <div className="text-center">
         <h2 className="text-2xl font-bold text-white mb-2">Editor</h2>
-        <p className="text-gray-400">Your photo and the generated AR code are placed on an standard A4 layout. Click 'Download PDF' to export and print!</p>
+        <p className="text-gray-400">Your photo and the generated AR code are placed on a standard A4 layout. Click &apos;Download PDF&apos; to export and print.</p>
         
         <div className="bg-gray-800 p-4 rounded-lg shadow mt-4 max-w-lg mx-auto border border-gray-700">
           <label className="flex items-center justify-center gap-2 text-white cursor-pointer hover:text-gray-300 w-max mx-auto mb-3">

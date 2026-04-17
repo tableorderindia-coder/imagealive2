@@ -55,6 +55,11 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('videos', 'videos', true)
 ON CONFLICT (id) DO NOTHING;
 
+-- Tracking bucket (for MindAR .mind files)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('tracking', 'tracking', true)
+ON CONFLICT (id) DO NOTHING;
+
 
 -- ▸ 4. Storage Policies — public read & upload
 -- ============================================================
@@ -80,6 +85,17 @@ CREATE POLICY "Allow public upload to videos bucket"
   ON storage.objects
   FOR INSERT
   WITH CHECK (bucket_id = 'videos');
+
+-- TRACKING bucket policies ─────────────────────
+CREATE POLICY "Allow public read on tracking bucket"
+  ON storage.objects
+  FOR SELECT
+  USING (bucket_id = 'tracking');
+
+CREATE POLICY "Allow public upload to tracking bucket"
+  ON storage.objects
+  FOR INSERT
+  WITH CHECK (bucket_id = 'tracking');
 
 
 -- ============================================================

@@ -1,15 +1,18 @@
-// @ts-nocheck
 'use client';
 
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { v4 as uuidv4 } from 'uuid';
+import type { Database } from '@/types/database';
+
+type ProjectInsert = Database['public']['Tables']['projects']['Insert'];
 
 export default function UploadForm() {
   const router = useRouter();
   const photoInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const trackingInputRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
 
@@ -19,6 +22,7 @@ export default function UploadForm() {
     // Read files directly from the DOM refs — avoids React 19 state-reset issues
     const photo = photoInputRef.current?.files?.[0] ?? null;
     const video = videoInputRef.current?.files?.[0] ?? null;
+    const trackingFile = trackingInputRef.current?.files?.[0] ?? null;
 
     if (!photo || !video) {
       setStatus('error');
@@ -39,6 +43,7 @@ export default function UploadForm() {
       const uniqueId = uuidv4();
       const photoName = `${uniqueId}-${photo.name}`;
       const videoName = `${uniqueId}-${video.name}`;
+      const trackingName = trackingFile ? `${uniqueId}-${trackingFile.name}` : null;
 
       // Upload Photo
       const { error: photoErr } = await supabase.storage.from('images').upload(photoName, photo);
@@ -51,12 +56,21 @@ export default function UploadForm() {
       if (vidErr) throw vidErr;
       const videoUrl = supabase.storage.from('videos').getPublicUrl(videoName).data.publicUrl;
 
+      let trackingUrl = '';
+      if (trackingFile && trackingName) {
+        setMessage('Uploading tracking file...');
+        const { error: trackingErr } = await supabase.storage.from('tracking').upload(trackingName, trackingFile);
+        if (trackingErr) throw trackingErr;
+        trackingUrl = supabase.storage.from('tracking').getPublicUrl(trackingName).data.publicUrl;
+      }
+
       setMessage('Saving project...');
-      const { data, error: dbErr } = await supabase.from('projects').insert({
+      const projectRecord: ProjectInsert = {
         image_url: photoUrl,
         video_url: videoUrl,
-        tracking_url: ''
-      }).select().single();
+        tracking_url: trackingUrl
+      };
+      const { data, error: dbErr } = await supabase.from('projects').insert(projectRecord).select().single();
 
       if (dbErr) throw dbErr;
 
@@ -65,17 +79,17 @@ export default function UploadForm() {
       
       router.push(`/editor/${data.id}`);
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       setStatus('error');
-      setMessage(err.message || 'An error occurred during upload.');
+      setMessage(err instanceof Error ? err.message : 'An error occurred during upload.');
     }
   };
 
   return (
     <div className="w-full max-w-xl mx-auto p-8 rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl">
       <h2 className="text-3xl font-bold mb-2 text-white text-center tracking-tight">Create your AR Frame</h2>
-      <p className="text-white/50 text-center text-sm mb-6">Upload a photo and a video — we'll make the photo come alive!</p>
+      <p className="text-white/50 text-center text-sm mb-6">Upload a photo and a video — we&apos;ll make the photo come alive!</p>
       
       <form onSubmit={handleUpload} className="space-y-6">
         <div className="p-5 rounded-xl bg-black/20 border border-white/10 transition-all hover:bg-black/30">
@@ -90,7 +104,7 @@ export default function UploadForm() {
                 accept="image/*" 
                 className="w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 transition"
               />
-              <p className="text-xs text-white/40 mt-1">This is the photo you'll print. The video will play on top of it.</p>
+              <p className="text-xs text-white/40 mt-1">This is the photo you&apos;ll print. The video will play on top of it.</p>
             </div>
             
             <div>
@@ -104,6 +118,30 @@ export default function UploadForm() {
               <p className="text-xs text-white/40 mt-1">This video will play when someone views your photo through the camera.</p>
             </div>
           </div>
+        </div>
+
+        <div className="p-5 rounded-xl bg-black/20 border border-emerald-400/20 transition-all hover:bg-black/30">
+          <h3 className="text-lg font-semibold text-white/90 mb-2">🎯 Tracking File for Auto Lock-On</h3>
+          <p className="text-xs text-white/55 mb-4">
+            Optional, but strongly recommended for real clients. Generate a MindAR <code className="bg-black/40 px-1 py-0.5 rounded">.mind</code> file from your photo using
+            {' '}
+            <a
+              href="https://hiukim.github.io/mind-ar-js-doc/tools/compile/"
+              target="_blank"
+              rel="noreferrer"
+              className="text-emerald-300 hover:text-emerald-200 underline"
+            >
+              the official compiler
+            </a>
+            , then upload it here so the video locks onto the printed photo automatically.
+          </p>
+          <input
+            ref={trackingInputRef}
+            type="file"
+            accept=".mind,application/octet-stream"
+            className="w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-emerald-600 file:text-white hover:file:bg-emerald-700 transition"
+          />
+          <p className="text-xs text-white/40 mt-2">If you skip this, the viewer falls back to manual alignment mode.</p>
         </div>
 
         {status === 'error' && (

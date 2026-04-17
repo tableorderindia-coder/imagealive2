@@ -31,6 +31,7 @@ export interface Database {
           tracking_url?: string
           created_at?: string
         }
+        Relationships: []
       }
     }
     Views: {

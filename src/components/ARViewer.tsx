@@ -1,69 +1,168 @@
-// @ts-nocheck
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { getViewerMode } from '@/lib/ar-viewer';
+import type { Database } from '@/types/database';
+
+type ProjectRow = Database['public']['Tables']['projects']['Row'];
 
 export default function ARViewer({ projectId }: { projectId: string }) {
-  const [projectData, setProjectData] = useState<any>(null);
+  const [projectData, setProjectData] = useState<ProjectRow | null>(null);
+  const [imageAspectRatio, setImageAspectRatio] = useState(1);
+  const [librariesLoaded, setLibrariesLoaded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [showGuide, setShowGuide] = useState(true);
-  const [opacity, setOpacity] = useState(0.85);
+  const [overlayOpacity, setOverlayOpacity] = useState(0.92);
+  const [guideOpacity, setGuideOpacity] = useState(0.35);
+  const [manualModeEnabled, setManualModeEnabled] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraRef = useRef<HTMLVideoElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const targetRef = useRef<HTMLElement | null>(null);
 
-  // Fetch project data
   useEffect(() => {
+    let isMounted = true;
+
     async function loadProject() {
       const { data } = await supabase.from('projects').select('*').eq('id', projectId).single();
-      if (data) setProjectData(data);
+      const project = data as ProjectRow | null;
+      if (!isMounted || !project) return;
+
+      setProjectData(project);
+      setManualModeEnabled(getViewerMode(project) === 'manual');
+
+      const img = new Image();
+      img.src = project.image_url;
+      img.onload = () => {
+        if (!isMounted) return;
+        setImageAspectRatio(img.height / img.width || 1);
+      };
     }
+
     loadProject();
+
+    return () => {
+      isMounted = false;
+    };
   }, [projectId]);
 
-  // Initialize rear camera
+  const viewerMode = useMemo(() => getViewerMode(projectData), [projectData]);
+
   useEffect(() => {
+    if (viewerMode !== 'manual') return;
+
+    let cancelled = false;
+    let stream: MediaStream | null = null;
+    const cameraEl = cameraRef.current;
+
     async function startCamera() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
           audio: false,
         });
-        if (cameraRef.current) {
-          cameraRef.current.srcObject = stream;
-          cameraRef.current.play();
+
+        if (!cancelled && cameraEl) {
+          cameraEl.srcObject = stream;
+          await cameraEl.play();
         }
       } catch (err) {
         console.warn('Camera access denied or not available:', err);
       }
     }
+
     startCamera();
 
     return () => {
-      // Cleanup camera stream on unmount
-      if (cameraRef.current?.srcObject) {
-        (cameraRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
+      cancelled = true;
+      stream?.getTracks().forEach((track) => track.stop());
+      if (cameraEl) {
+        cameraEl.srcObject = null;
       }
     };
-  }, []);
+  }, [viewerMode]);
 
-  const handlePlay = useCallback(() => {
-    if (videoRef.current) {
-      videoRef.current.muted = false;
-      videoRef.current.play().catch(() => {});
+  useEffect(() => {
+    if (viewerMode !== 'tracked') return;
+
+    let cancelled = false;
+
+    async function loadLibraries() {
+      await new Promise<void>((resolve) => {
+        if ('AFRAME' in window) return resolve();
+        const aframeScript = document.createElement('script');
+        aframeScript.src = 'https://aframe.io/releases/1.4.2/aframe.min.js';
+        aframeScript.onload = () => resolve();
+        document.head.appendChild(aframeScript);
+      });
+
+      await new Promise<void>((resolve) => {
+        if ('MINDAR' in window) return resolve();
+        const mindarScript = document.createElement('script');
+        mindarScript.src = 'https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js';
+        mindarScript.onload = () => resolve();
+        document.head.appendChild(mindarScript);
+      });
+
+      if (!cancelled) {
+        setLibrariesLoaded(true);
+      }
+    }
+
+    loadLibraries();
+
+    return () => {
+      cancelled = true;
+      setLibrariesLoaded(false);
+    };
+  }, [viewerMode]);
+
+  useEffect(() => {
+    if (viewerMode !== 'tracked' || !librariesLoaded || !targetRef.current) return;
+
+    const target = targetRef.current;
+
+    const handleTargetFound = () => {
+      const videoEl = document.querySelector('#ar-video') as HTMLVideoElement | null;
+      if (videoEl) {
+        videoEl.play().catch((err) => console.warn('Tracked autoplay blocked:', err));
+      }
       setIsPlaying(true);
-      // Fade guide after 2 seconds
-      setTimeout(() => setShowGuide(false), 2000);
-    }
+    };
+
+    const handleTargetLost = () => {
+      const videoEl = document.querySelector('#ar-video') as HTMLVideoElement | null;
+      if (videoEl) {
+        videoEl.pause();
+      }
+      setIsPlaying(false);
+    };
+
+    target.addEventListener('targetFound', handleTargetFound);
+    target.addEventListener('targetLost', handleTargetLost);
+
+    return () => {
+      target.removeEventListener('targetFound', handleTargetFound);
+      target.removeEventListener('targetLost', handleTargetLost);
+    };
+  }, [librariesLoaded, viewerMode]);
+
+  const handleManualPlay = useCallback(() => {
+    if (!videoRef.current) return;
+
+    videoRef.current.muted = false;
+    videoRef.current.play().catch((err) => console.warn('Manual playback blocked:', err));
+    setIsPlaying(true);
   }, []);
 
-  const handlePause = useCallback(() => {
-    if (videoRef.current) {
-      videoRef.current.pause();
-      setIsPlaying(false);
-      setShowGuide(true);
-    }
+  const handleManualPause = useCallback(() => {
+    if (!videoRef.current) return;
+
+    videoRef.current.pause();
+    setIsPlaying(false);
   }, []);
 
   if (!projectData) {
@@ -74,46 +173,110 @@ export default function ARViewer({ projectId }: { projectId: string }) {
     );
   }
 
+  if (viewerMode === 'tracked' && !librariesLoaded) {
+    return (
+      <div className="fixed inset-0 bg-black flex items-center justify-center">
+        <div className="text-white text-xl animate-pulse">Initializing tracked AR...</div>
+      </div>
+    );
+  }
+
+  if (viewerMode === 'tracked') {
+    return (
+      <div className="w-full h-screen overflow-hidden fixed inset-0 z-50 bg-black">
+        <a-scene
+          mindar-image={`imageTargetSrc: ${projectData.tracking_url};`}
+          color-space="sRGB"
+          renderer="colorManagement: true, physicallyCorrectLights"
+          vr-mode-ui="enabled: false"
+          device-orientation-permission-ui="enabled: false"
+        >
+          <a-assets>
+            <video
+              id="ar-video"
+              crossOrigin="anonymous"
+              src={projectData.video_url}
+              preload="auto"
+              loop
+              playsInline
+              muted
+            />
+          </a-assets>
+
+          <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+          <a-entity mindar-image-target="targetIndex: 0" ref={targetRef}>
+            <a-plane
+              src="#ar-video"
+              material="shader: flat; side: double"
+              position="0 0 0.001"
+              width="1"
+              height={imageAspectRatio}
+            />
+          </a-entity>
+        </a-scene>
+
+        <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/70 to-transparent z-10">
+          <p className="text-white text-center text-sm font-medium tracking-wide">
+            {isPlaying
+              ? '✨ Locked on. Keep the photo in frame and tap anywhere for sound.'
+              : '📸 Point your camera at the printed photo to lock the video in place.'}
+          </p>
+        </div>
+
+        <div
+          className="absolute inset-0 z-0"
+          onClick={() => {
+            const trackedVideo = document.getElementById('ar-video') as HTMLVideoElement | null;
+            if (!trackedVideo) return;
+            trackedVideo.muted = false;
+            trackedVideo.play().catch(() => {});
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
-    <div ref={containerRef} className="fixed inset-0 bg-black overflow-hidden select-none" style={{ touchAction: 'none' }}>
-      {/* Camera Feed (background) */}
+    <div className="fixed inset-0 bg-black overflow-hidden select-none" style={{ touchAction: 'none' }}>
       <video
         ref={cameraRef}
         autoPlay
         playsInline
         muted
         className="absolute inset-0 w-full h-full object-cover"
-        style={{ transform: 'scaleX(1)' }}
       />
 
-      {/* Dark overlay for better contrast */}
-      <div className="absolute inset-0 bg-black/20 pointer-events-none" />
+      <div className="absolute inset-0 bg-black/25 pointer-events-none" />
 
-      {/* Center Frame Area */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div 
-          className="relative" 
-          style={{ 
-            width: '80vw', 
-            maxWidth: '400px',
-            aspectRatio: 'auto',
-          }}
+      <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/80 to-transparent z-10 space-y-2">
+        <p className="text-white text-center text-sm font-medium tracking-wide">
+          {isPlaying
+            ? '✨ Manual overlay mode. Keep the photo inside the frame for the cleanest effect.'
+            : '📸 This project has no tracking file yet. Line up the frame and tap Play.'}
+        </p>
+        <p className="text-white/65 text-center text-xs">
+          Best result: upload a MindAR `.mind` tracking file for automatic lock-on.
+        </p>
+      </div>
+
+      <div className="absolute inset-0 flex items-center justify-center px-6 pointer-events-none">
+        <div
+          className="relative w-full max-w-[420px]"
+          style={{ aspectRatio: `${1 / imageAspectRatio}` }}
         >
-          {/* Guide Image (semi-transparent reference of the uploaded photo) */}
-          {showGuide && (
-            <img
-              src={projectData.image_url}
-              alt="Align guide"
-              className="w-full h-auto rounded-lg transition-opacity duration-700"
-              style={{ 
-                opacity: isPlaying ? 0.15 : 0.4,
-                border: '3px solid rgba(255,255,255,0.6)',
-                boxShadow: '0 0 30px rgba(255,255,255,0.15)',
-              }}
-            />
-          )}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={projectData.image_url}
+            alt="Alignment guide"
+            className="absolute inset-0 w-full h-full object-cover rounded-[28px] transition-opacity duration-300"
+            style={{
+              opacity: guideOpacity,
+              border: '3px solid rgba(255,255,255,0.72)',
+              boxShadow: '0 0 40px rgba(255,255,255,0.16)',
+            }}
+          />
 
-          {/* Video Overlay (plays right on top of the guide) */}
           <video
             ref={videoRef}
             src={projectData.video_url}
@@ -122,66 +285,84 @@ export default function ARViewer({ projectId }: { projectId: string }) {
             playsInline
             muted
             preload="auto"
-            className="absolute inset-0 w-full h-full object-cover rounded-lg transition-opacity duration-500"
-            style={{ 
-              opacity: isPlaying ? opacity : 0,
-              border: '3px solid rgba(255,255,255,0.8)',
-              boxShadow: '0 0 40px rgba(255,255,255,0.2), 0 0 80px rgba(100,150,255,0.1)',
+            className="absolute inset-0 w-full h-full object-cover rounded-[28px] transition-opacity duration-300"
+            style={{
+              opacity: isPlaying ? overlayOpacity : 0,
+              boxShadow: '0 0 60px rgba(76, 172, 255, 0.16)',
             }}
           />
 
-          {/* Decorative Frame Corners */}
-          <div className="absolute -top-1 -left-1 w-6 h-6 border-t-3 border-l-3 border-white rounded-tl-sm pointer-events-none" style={{ borderWidth: '3px 0 0 3px' }} />
-          <div className="absolute -top-1 -right-1 w-6 h-6 border-t-3 border-r-3 border-white rounded-tr-sm pointer-events-none" style={{ borderWidth: '3px 3px 0 0' }} />
-          <div className="absolute -bottom-1 -left-1 w-6 h-6 border-b-3 border-l-3 border-white rounded-bl-sm pointer-events-none" style={{ borderWidth: '0 0 3px 3px' }} />
-          <div className="absolute -bottom-1 -right-1 w-6 h-6 border-b-3 border-r-3 border-white rounded-br-sm pointer-events-none" style={{ borderWidth: '0 3px 3px 0' }} />
+          <div
+            className="absolute inset-0 rounded-[28px]"
+            style={{ border: '3px solid rgba(255,255,255,0.86)' }}
+          />
+
+          <div className="absolute -top-1 -left-1 w-7 h-7 rounded-tl-md border-l-4 border-t-4 border-white" />
+          <div className="absolute -top-1 -right-1 w-7 h-7 rounded-tr-md border-r-4 border-t-4 border-white" />
+          <div className="absolute -bottom-1 -left-1 w-7 h-7 rounded-bl-md border-b-4 border-l-4 border-white" />
+          <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-br-md border-b-4 border-r-4 border-white" />
         </div>
       </div>
 
-      {/* Top instruction bar */}
-      <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/70 to-transparent z-10">
-        <p className="text-white text-center text-sm font-medium tracking-wide">
-          {isPlaying 
-            ? '✨ Photo is alive! Tap pause to stop.' 
-            : '📸 Align the frame over your printed photo, then tap Play'}
-        </p>
-      </div>
-
-      {/* Bottom Controls */}
-      <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/80 to-transparent z-10 flex flex-col items-center gap-4">
-        {/* Opacity slider (only when playing) */}
-        {isPlaying && (
-          <div className="flex items-center gap-3 w-full max-w-xs">
-            <span className="text-white/60 text-xs">Blend</span>
+      <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/90 to-transparent z-10 flex flex-col items-center gap-4">
+        <div className="w-full max-w-sm rounded-2xl bg-white/8 backdrop-blur-md border border-white/10 p-4 space-y-3">
+          <label className="flex items-center gap-3 text-white/80 text-xs">
+            <span className="w-24 shrink-0">Video blend</span>
             <input
               type="range"
-              min="0.3"
+              min="0.45"
               max="1"
               step="0.05"
-              value={opacity}
-              onChange={(e) => setOpacity(Number(e.target.value))}
-              className="flex-1"
+              value={overlayOpacity}
+              onChange={(e) => setOverlayOpacity(Number(e.target.value))}
+              className="flex-1 pointer-events-auto"
             />
-            <span className="text-white/60 text-xs">{Math.round(opacity * 100)}%</span>
-          </div>
-        )}
+            <span className="w-10 text-right">{Math.round(overlayOpacity * 100)}%</span>
+          </label>
 
-        {/* Play / Pause button */}
+          <label className="flex items-center gap-3 text-white/80 text-xs">
+            <span className="w-24 shrink-0">Photo guide</span>
+            <input
+              type="range"
+              min="0.15"
+              max="0.65"
+              step="0.05"
+              value={guideOpacity}
+              onChange={(e) => setGuideOpacity(Number(e.target.value))}
+              className="flex-1 pointer-events-auto"
+            />
+            <span className="w-10 text-right">{Math.round(guideOpacity * 100)}%</span>
+          </label>
+        </div>
+
         <button
-          onClick={isPlaying ? handlePause : handlePlay}
+          onClick={isPlaying ? handleManualPause : handleManualPlay}
           className="pointer-events-auto py-3 px-10 rounded-full font-bold text-lg shadow-2xl transition-all duration-300 active:scale-95"
           style={{
-            background: isPlaying 
-              ? 'linear-gradient(135deg, #ef4444, #dc2626)' 
+            background: isPlaying
+              ? 'linear-gradient(135deg, #ef4444, #dc2626)'
               : 'linear-gradient(135deg, #22c55e, #16a34a)',
             color: 'white',
-            boxShadow: isPlaying 
-              ? '0 4px 30px rgba(239,68,68,0.4)' 
+            boxShadow: isPlaying
+              ? '0 4px 30px rgba(239,68,68,0.4)'
               : '0 4px 30px rgba(34,197,94,0.4)',
           }}
         >
           {isPlaying ? '⏸ Pause' : '▶ Play'}
         </button>
+
+        <button
+          onClick={() => setManualModeEnabled((value) => !value)}
+          className="pointer-events-auto text-white/70 text-xs underline underline-offset-4"
+        >
+          {manualModeEnabled ? 'Hide manual mode note' : 'Show manual mode note'}
+        </button>
+
+        {manualModeEnabled && (
+          <div className="max-w-sm rounded-2xl bg-black/50 border border-white/10 px-4 py-3 text-center text-white/70 text-xs leading-5">
+            Manual mode is only a fallback for older projects. For a client-friendly experience, re-upload this photo with a MindAR tracking file so the video locks onto the print automatically.
+          </div>
+        )}
 
         <p className="text-white/40 text-xs">FrameAlive™</p>
       </div>
