@@ -207,11 +207,17 @@ export default function ARViewer({ projectId }: { projectId: string }) {
 
           <a-entity mindar-image-target="targetIndex: 0" ref={targetRef}>
             <a-plane
+              material={`shader: flat; src: ${projectData.image_url}; opacity: 0.02; side: double; transparent: true;`}
+              position="0 0 0"
+              width="1"
+              height="1"
+            />
+            <a-plane
               src="#ar-video"
               material="shader: flat; side: double"
               position="0 0 0.001"
               width="1"
-              height={imageAspectRatio}
+              height="1"
             />
           </a-entity>
         </a-scene>
