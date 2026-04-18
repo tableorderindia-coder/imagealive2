@@ -9,6 +9,18 @@ import type { Database } from '@/types/database';
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
 const DEBUG_TRACKED = true;
 
+function getAssetName(url: string | null | undefined) {
+  if (!url) return 'Not available';
+
+  const rawName = url.split('/').pop() ?? url;
+
+  try {
+    return decodeURIComponent(rawName);
+  } catch {
+    return rawName;
+  }
+}
+
 export default function ARViewer({ projectId }: { projectId: string }) {
   const [projectData, setProjectData] = useState<ProjectRow | null>(null);
   const [imageAspectRatio, setImageAspectRatio] = useState(1);
@@ -103,6 +115,10 @@ export default function ARViewer({ projectId }: { projectId: string }) {
       placement: activePlacement,
     });
   }, [activePlacement, photoDimensions, videoDimensions]);
+
+  const trackingAssetName = useMemo(() => getAssetName(projectData?.tracking_url), [projectData?.tracking_url]);
+  const imageAssetName = useMemo(() => getAssetName(projectData?.image_url), [projectData?.image_url]);
+  const videoAssetName = useMemo(() => getAssetName(projectData?.video_url), [projectData?.video_url]);
 
   useEffect(() => {
     if (viewerMode !== 'manual') return;
@@ -381,6 +397,18 @@ export default function ARViewer({ projectId }: { projectId: string }) {
                 ? '✨ Locked on. Keep the photo in frame and tap anywhere for sound.'
                 : '📸 Point your camera at the printed photo to lock the video in place.'}
           </p>
+
+          {DEBUG_TRACKED && (
+            <div className="mt-3 mx-auto max-w-md rounded-2xl border border-white/10 bg-black/60 px-4 py-3 text-xs text-white/80 backdrop-blur-md space-y-1">
+              <p><strong className="text-white">Image:</strong> {imageAssetName}</p>
+              <p><strong className="text-white">Image size:</strong> {photoDimensions ? `${photoDimensions.width} x ${photoDimensions.height}` : 'Loading...'}</p>
+              <p><strong className="text-white">Video:</strong> {videoAssetName}</p>
+              <p><strong className="text-white">Video size:</strong> {videoDimensions ? `${videoDimensions.width} x ${videoDimensions.height}` : 'Loading...'}</p>
+              <p><strong className="text-white">Tracking file:</strong> {projectData?.tracking_url ? trackingAssetName : 'No .mind file attached'}</p>
+              <p><strong className="text-white">Expected target size:</strong> {photoDimensions ? `${photoDimensions.width} x ${photoDimensions.height}` : 'Matches the uploaded image'}</p>
+              <p className="text-white/55">MindAR files do not expose a reliable image width/height here, so the target should match the uploaded image exactly.</p>
+            </div>
+          )}
         </div>
 
         <div

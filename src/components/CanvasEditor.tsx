@@ -26,6 +26,18 @@ type DragState = {
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
+const getAssetName = (url: string | null | undefined) => {
+  if (!url) return 'Not available';
+
+  const rawName = url.split('/').pop() ?? url;
+
+  try {
+    return decodeURIComponent(rawName);
+  } catch {
+    return rawName;
+  }
+};
+
 export default function CanvasEditor({ projectId }: { projectId: string }) {
   const [projectData, setProjectData] = useState<ProjectRow | null>(null);
   const [photoImg, setPhotoImg] = useState<HTMLImageElement | null>(null);
@@ -135,6 +147,10 @@ export default function CanvasEditor({ projectId }: { projectId: string }) {
     });
   }, [activePlacement, photoImg, videoDimensions]);
 
+  const imageAssetName = useMemo(() => getAssetName(projectData?.image_url), [projectData?.image_url]);
+  const videoAssetName = useMemo(() => getAssetName(projectData?.video_url), [projectData?.video_url]);
+  const trackingAssetName = useMemo(() => getAssetName(projectData?.tracking_url), [projectData?.tracking_url]);
+
   const handleOverlayPointerDown = (event: React.PointerEvent<HTMLVideoElement>) => {
     if (!previewRef.current || !activePlacement) return;
 
@@ -220,6 +236,16 @@ export default function CanvasEditor({ projectId }: { projectId: string }) {
           <p className="text-gray-400 text-sm mb-4">
             Drag the video to place it inside the printed photo, then use the scale slider to size it like a living frame.
           </p>
+
+          <div className="mb-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-white/75 space-y-1">
+            <p><strong className="text-white">Image:</strong> {imageAssetName}</p>
+            <p><strong className="text-white">Image size:</strong> {photoImg ? `${photoImg.naturalWidth} x ${photoImg.naturalHeight}` : 'Loading...'}</p>
+            <p><strong className="text-white">Video:</strong> {videoAssetName}</p>
+            <p><strong className="text-white">Video size:</strong> {videoDimensions ? `${videoDimensions.width} x ${videoDimensions.height}` : 'Loading...'}</p>
+            <p><strong className="text-white">Tracking file:</strong> {projectData?.tracking_url ? trackingAssetName : 'No .mind file attached'}</p>
+            <p><strong className="text-white">Expected target size:</strong> {photoImg ? `${photoImg.naturalWidth} x ${photoImg.naturalHeight}` : 'Matches the uploaded image'}</p>
+            <p className="text-white/50">The .mind file itself does not expose a trusted width and height here, so it should be generated from this exact image file.</p>
+          </div>
 
           <div
             ref={previewRef}
