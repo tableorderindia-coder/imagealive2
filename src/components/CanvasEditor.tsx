@@ -6,6 +6,7 @@ import QRCode from 'qrcode';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { supabase } from '@/lib/supabase';
+import { getTargetImageHref } from '@/lib/project-assets';
 import { calculateDefaultOverlayPlacement, getOverlayRenderMetrics } from '@/lib/overlay-placement';
 import type { Database } from '@/types/database';
 
@@ -150,6 +151,7 @@ export default function CanvasEditor({ projectId }: { projectId: string }) {
   const imageAssetName = useMemo(() => getAssetName(projectData?.image_url), [projectData?.image_url]);
   const videoAssetName = useMemo(() => getAssetName(projectData?.video_url), [projectData?.video_url]);
   const trackingAssetName = useMemo(() => getAssetName(projectData?.tracking_url), [projectData?.tracking_url]);
+  const targetImageHref = useMemo(() => getTargetImageHref(projectData), [projectData]);
 
   const handleOverlayPointerDown = (event: React.PointerEvent<HTMLVideoElement>) => {
     if (!previewRef.current || !activePlacement) return;
@@ -404,6 +406,15 @@ export default function CanvasEditor({ projectId }: { projectId: string }) {
             >
               Download Print-Ready PDF
             </button>
+
+            <a
+              href={targetImageHref}
+              target="_blank"
+              rel="noreferrer"
+              className="py-3 px-8 rounded-xl font-bold bg-slate-100 hover:bg-white text-slate-900 shadow-lg transition-transform hover:scale-105 text-center"
+            >
+              Open Target Image
+            </a>
 
             <a
               href={`/view/${projectId}`}
