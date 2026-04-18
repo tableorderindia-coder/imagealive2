@@ -341,23 +341,23 @@ export default function ARViewer({ projectId }: { projectId: string }) {
           <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
           <a-entity mindar-image-target="targetIndex: 0" ref={targetRef}>
-            <a-entity scale={`1 ${imageAspectRatio} 1`}>
-              <a-plane
-                material={`shader: flat; src: ${projectData.image_url}; opacity: 0.02; side: double; transparent: true;`}
-                position="0 0 0"
-                width="1"
-                height="1"
-              />
-              {overlayMetrics && (
+            {overlayMetrics && (
+              <>
+                <a-plane
+                  material={`shader: flat; src: ${projectData.image_url}; opacity: 0.02; side: double; transparent: true;`}
+                  position="0 0 0"
+                  width={overlayMetrics.photoWidth}
+                  height={overlayMetrics.photoHeight}
+                />
                 <a-plane
                   src="#ar-video"
                   material="shader: flat; side: double"
-                  position={`${overlayMetrics.x} ${-overlayMetrics.y} 0.001`}
+                  position={`${overlayMetrics.x * overlayMetrics.photoWidth} ${-overlayMetrics.y * overlayMetrics.photoHeight} 0.001`}
                   width={overlayMetrics.width}
                   height={overlayMetrics.height}
                 />
-              )}
-            </a-entity>
+              </>
+            )}
           </a-entity>
         </a-scene>
 

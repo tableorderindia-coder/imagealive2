@@ -8,6 +8,43 @@ import type { Database } from '@/types/database';
 
 type ProjectInsert = Database['public']['Tables']['projects']['Insert'];
 
+function isLikelyScreenshot(file: File) {
+  return file.name.toLowerCase().includes('screenshot');
+}
+
+function loadImageDimensions(file: File) {
+  return new Promise<{ width: number; height: number }>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      resolve({ width: img.width, height: img.height });
+      URL.revokeObjectURL(objectUrl);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('Could not read the selected photo.'));
+    };
+    img.src = objectUrl;
+  });
+}
+
+function loadVideoDimensions(file: File) {
+  return new Promise<{ width: number; height: number }>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    video.onloadedmetadata = () => {
+      resolve({ width: video.videoWidth, height: video.videoHeight });
+      URL.revokeObjectURL(objectUrl);
+    };
+    video.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('Could not read the selected video.'));
+    };
+    video.src = objectUrl;
+  });
+}
+
 export default function UploadForm() {
   const router = useRouter();
   const photoInputRef = useRef<HTMLInputElement>(null);
@@ -15,6 +52,7 @@ export default function UploadForm() {
   const trackingInputRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
+  const [warnings, setWarnings] = useState<string[]>([]);
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,6 +71,28 @@ export default function UploadForm() {
     try {
       setStatus('uploading');
       setMessage('Uploading photo...');
+      setWarnings([]);
+
+      const nextWarnings: string[] = [];
+      const [{ width: imageWidth, height: imageHeight }, { width: videoWidth, height: videoHeight }] =
+        await Promise.all([loadImageDimensions(photo), loadVideoDimensions(video)]);
+
+      if (isLikelyScreenshot(photo)) {
+        nextWarnings.push('Use the original photo file instead of a screenshot for best AR lock-on.');
+      }
+
+      if (imageWidth > 2000 && imageHeight > 2000) {
+        nextWarnings.push('This image is very large and may be a screenshot. Original camera photos usually track more accurately.');
+      }
+
+      const imageRatio = imageWidth / imageHeight;
+      const videoRatio = videoWidth / videoHeight;
+      if (Math.abs(imageRatio - videoRatio) > 0.2) {
+        nextWarnings.push('Video and photo ratios are quite different, so the overlay may need extra adjustment in the editor.');
+      }
+
+      nextWarnings.push('For best AR alignment: upload the original photo, generate the .mind file from that same file, and match the video orientation to the photo.');
+      setWarnings(nextWarnings);
 
       const uniqueId = uuidv4();
       const photoName = `${uniqueId}-${photo.name}`;
@@ -140,6 +200,14 @@ export default function UploadForm() {
           />
           <p className="text-xs text-white/40 mt-2">If you skip this, the viewer falls back to manual alignment mode.</p>
         </div>
+
+        {warnings.length > 0 && (
+          <div className="p-3 rounded-xl bg-amber-500/15 text-amber-100 border border-amber-400/30 text-sm space-y-1">
+            {warnings.map((warning) => (
+              <p key={warning}>⚠️ {warning}</p>
+            ))}
+          </div>
+        )}
 
         {status === 'error' && (
           <div className="p-3 rounded bg-red-500/20 text-red-200 border border-red-500/30 text-sm">
