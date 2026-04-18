@@ -7,6 +7,7 @@ import { calculateDefaultOverlayPlacement, getOverlayRenderMetrics } from '@/lib
 import type { Database } from '@/types/database';
 
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
+const DEBUG_TRACKED = true;
 
 export default function ARViewer({ projectId }: { projectId: string }) {
   const [projectData, setProjectData] = useState<ProjectRow | null>(null);
@@ -343,19 +344,30 @@ export default function ARViewer({ projectId }: { projectId: string }) {
           <a-entity mindar-image-target="targetIndex: 0" ref={targetRef}>
             {overlayMetrics && (
               <>
-                <a-plane
-                  material={`shader: flat; src: ${projectData.image_url}; opacity: 0.02; side: double; transparent: true;`}
-                  position="0 0 0"
-                  width={overlayMetrics.photoWidth}
-                  height={overlayMetrics.photoHeight}
-                />
-                <a-plane
-                  src="#ar-video"
-                  material="shader: flat; side: double"
-                  position={`${overlayMetrics.x * overlayMetrics.photoWidth} ${-overlayMetrics.y * overlayMetrics.photoHeight} 0.001`}
-                  width={overlayMetrics.width}
-                  height={overlayMetrics.height}
-                />
+                {DEBUG_TRACKED ? (
+                  <a-plane
+                    position="0 0 0"
+                    width={overlayMetrics.photoWidth * 0.95}
+                    height={overlayMetrics.photoHeight * 0.95}
+                    material="color: red; wireframe: true; side: double"
+                  />
+                ) : (
+                  <>
+                    <a-plane
+                      material={`shader: flat; src: ${projectData.image_url}; opacity: 0.02; side: double; transparent: true;`}
+                      position="0 0 0"
+                      width={overlayMetrics.photoWidth}
+                      height={overlayMetrics.photoHeight}
+                    />
+                    <a-plane
+                      src="#ar-video"
+                      material="shader: flat; side: double"
+                      position={`${overlayMetrics.x * overlayMetrics.photoWidth} ${-overlayMetrics.y * overlayMetrics.photoHeight} 0.001`}
+                      width={overlayMetrics.width}
+                      height={overlayMetrics.height}
+                    />
+                  </>
+                )}
               </>
             )}
           </a-entity>
@@ -363,9 +375,11 @@ export default function ARViewer({ projectId }: { projectId: string }) {
 
         <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/70 to-transparent z-10">
           <p className="text-white text-center text-sm font-medium tracking-wide">
-            {isPlaying
-              ? '✨ Locked on. Keep the photo in frame and tap anywhere for sound.'
-              : '📸 Point your camera at the printed photo to lock the video in place.'}
+            {DEBUG_TRACKED
+              ? '🧪 Debug mode: the red frame should sit exactly on the printed photo.'
+              : isPlaying
+                ? '✨ Locked on. Keep the photo in frame and tap anywhere for sound.'
+                : '📸 Point your camera at the printed photo to lock the video in place.'}
           </p>
         </div>
 
